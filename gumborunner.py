@@ -61,12 +61,12 @@ class GumboRunner:
         self.remove_output()
         self.remove_scratch()
     
-    def generate_all_input(self, data_types, data_sizes):
+    def generate_all_input(self, data_types, data_sizes, add_suffix=True):
         for size in data_sizes:
             for data in data_types:
-                self.generate_input(data,size,True)
+                self.generate_input(data, size, add_suffix)
         
-    def generate_input(self,data,size,add_suffix=False):
+    def generate_input(self, data, size, add_suffix=False):
         
         type = data[0]
         

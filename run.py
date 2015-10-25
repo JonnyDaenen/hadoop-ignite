@@ -15,6 +15,8 @@ parser.add_argument("-p", "--parameters", action='store', required=True,\
     help="python file with necessary vars")
 parser.add_argument("-t", "--datatypes", nargs='+', action='store',required=True,\
     help="type id list")
+parser.add_argument("--nosuffix", "--nosuffix", action='store_true', default=False,\
+        help="avoid data directory suffixes in data-only modus")
 parser.add_argument("-s", "--sizes", action='store', nargs='+', type=int, required=True,\
     help="size list")
 parser.add_argument("-o", "--optimizations", action='store', nargs='+', required=False, default=["default"],\
@@ -67,6 +69,6 @@ g.set_debug(params['debug'])
 
 
 if len(req_queries) == 0 and len(req_extra_scripts) == 0:
-    g.generate_all_input(req_types, req_sizes)
+    g.generate_all_input(req_types, req_sizes, not params['nosuffix'])
 else:
     g.run_all(req_types, req_sizes, req_optimizations, req_queries, req_extra_scripts)
