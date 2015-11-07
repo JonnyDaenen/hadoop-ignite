@@ -1,3 +1,4 @@
+from subprocess import Popen
 from subprocess import call
 import os
 import datetime
@@ -39,7 +40,7 @@ class GumboRunner:
         print "\t" + reduce(lambda x,y: str(x) + " " + str(y), cmdlist)
         cmdlist = map(lambda x: str(x), cmdlist)
         if not self.debug:
-            call(cmdlist)
+            return Popen(cmdlist)
 
     def hdfs_remove(self,dir):
         self.cmd(["hadoop", "dfs", "-rm", "-r", "-skipTrash", dir])
@@ -62,11 +63,22 @@ class GumboRunner:
         self.remove_scratch()
     
     def generate_all_input(self, data_types, data_sizes, add_suffix=True):
+        pids = []
         for size in data_sizes:
             for data in data_types:
-                self.generate_input(data, size, add_suffix)
+                pids = pids + self.generate_input(data, size, add_suffix)
+                
+        self.wait_for(pids)
+        
+    def wait_for(self, pids):
+        print("waiting for subprocesses")
+        exit_codes = [p.wait() for p in pids]
+        print("subprocesses done")
+        return exit_codes
         
     def generate_input(self, data, size, add_suffix=False):
+        
+        pids = []
         
         type = data[0]
         
@@ -92,7 +104,9 @@ class GumboRunner:
                     os.path.join(self.hdfs_input_dir,relation+suffix), 
                     1, site
                 ]
-                self.cmd(gencmd)
+                pids = pids + [self.cmd(gencmd)]
+                
+        return pids
 
 
     def get_opts(self):
@@ -132,12 +146,20 @@ class GumboRunner:
             "cgpmr" : "-Dgumbo.engine.mapOutputGroupingPolicy=COSTGROUP_PAPER -Dgumbo.engine.mapOutputGroupingOptimizationOn=true -Dgumbo.engine.reduceOutputGroupingOptimizationOn=true",
             "cgimr" : "-Dgumbo.engine.mapOutputGroupingPolicy=COSTGROUP_IO -Dgumbo.engine.mapOutputGroupingOptimizationOn=true -Dgumbo.engine.reduceOutputGroupingOptimizationOn=true",
             
+            "bcggmr" : "-Dgumbo.engine.mapOutputGroupingPolicy=BESTCOSTGROUP_GUMBO -Dgumbo.engine.mapOutputGroupingOptimizationOn=true -Dgumbo.engine.reduceOutputGroupingOptimizationOn=true",
+            "bcgpmr" : "-Dgumbo.engine.mapOutputGroupingPolicy=BESTCOSTGROUP_PAPER -Dgumbo.engine.mapOutputGroupingOptimizationOn=true -Dgumbo.engine.reduceOutputGroupingOptimizationOn=true",
+            "bcgimr" : "-Dgumbo.engine.mapOutputGroupingPolicy=BESTCOSTGROUP_IO -Dgumbo.engine.mapOutputGroupingOptimizationOn=true -Dgumbo.engine.reduceOutputGroupingOptimizationOn=true",
+            
+            
             "red64" : "-Dgumbo.engine.hadoop.reducersize_mb=64",
             "red128" : "-Dgumbo.engine.hadoop.reducersize_mb=128",
             "comb1" : "-Dgumbo.engine.guardedCombinerOptimizationOn=true",
             "test" : "",
-            
         }
+        
+        for i in range(17):
+            d["p"+str(i)] = "-Dgumbo.engine.grouper.beststopindicator=" + str(i)
+            
         return d
 
     def get_opt(self, optids):
