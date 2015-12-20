@@ -1,5 +1,6 @@
 from subprocess import Popen
 from subprocess import call
+from subprocess import PIPE
 import os
 import datetime
 
@@ -11,6 +12,7 @@ class GumboRunner:
     
     local = False
     debug = False
+    cleanup = True
     
     exp_nr = "Gumbo_Job"
     function_file = "functions.py"
@@ -32,15 +34,21 @@ class GumboRunner:
     def set_local(self, local):
         self.local = local
         
+    def set_cleanup(self, cleanup):
+        self.cleanup = cleanup
+        
     def set_debug(self, debug):
         self.debug = debug
 
-    def cmd(self,cmdlist):
+    def cmd(self, cmdlist, background=False):
         print "Executing command:"
         print "\t" + reduce(lambda x,y: str(x) + " " + str(y), cmdlist)
         cmdlist = map(lambda x: str(x), cmdlist)
         if not self.debug:
-            return Popen(cmdlist)
+            if background:
+                return Popen(cmdlist, stdout=PIPE, stderr=PIPE)
+            else:
+                return call(cmdlist)
 
     def hdfs_remove(self,dir):
         self.cmd(["hadoop", "dfs", "-rm", "-r", "-skipTrash", dir])
@@ -71,9 +79,24 @@ class GumboRunner:
         self.wait_for(pids)
         
     def wait_for(self, pids):
+        # return
         print("waiting for subprocesses")
-        exit_codes = [p.wait() for p in pids]
+        return_vals = [[p.pid] + list(p.communicate()) + [p.returncode] for p in pids]
+        exit_codes = [p.returncode for p in pids]
         print("subprocesses done")
+        
+        print
+        print "---> START OF CMD OUTPUT <---"
+        for return_val in return_vals:
+            print "Process:", return_val[0]
+            print "Return:", return_val[3]
+            print "Errors:"
+            print return_val[2] 
+            print "Output:"
+            print return_val[1]
+        print "---> END OF CMD OUTPUT <---"
+        print
+        
         return exit_codes
         
     def generate_input(self, data, size, add_suffix=False):
@@ -100,11 +123,11 @@ class GumboRunner:
                     "generate_data_hdfs", 
                     size, splits, 
                     self.function_file, function_name, 
-                    os.path.join("tmp/",relation+suffix), 
+                    "tmp", #os.path.join("tmp/",relation+suffix), 
                     os.path.join(self.hdfs_input_dir,relation+suffix), 
                     1, site
                 ]
-                pids = pids + [self.cmd(gencmd)]
+                pids = pids + [self.cmd(gencmd, True)]
                 
         return pids
 
@@ -153,8 +176,36 @@ class GumboRunner:
             
             "red64" : "-Dgumbo.engine.hadoop.reducersize_mb=64",
             "red128" : "-Dgumbo.engine.hadoop.reducersize_mb=128",
+            "red256" : "-Dgumbo.engine.hadoop.reducersize_mb=256",
+            "red512" : "-Dgumbo.engine.hadoop.reducersize_mb=512",
+            "red1g" : "-Dgumbo.engine.hadoop.reducersize_mb=1024",
+            "red2g" : "-Dgumbo.engine.hadoop.reducersize_mb=2048",
+            
+            
+            "PG" : "-Dgumbo.compiler.partitioner=gumbo.compiler.partitioner.GreedyPartitioner",
+            "PO" : "-Dgumbo.compiler.partitioner=gumbo.compiler.partitioner.OptimalPartitioner",
+            "PH" : "-Dgumbo.compiler.partitioner=gumbo.compiler.partitioner.HeightPartitioner",
+            "PD" : "-Dgumbo.compiler.partitioner=gumbo.compiler.partitioner.DepthPartitioner",
+            
+            
             "comb1" : "-Dgumbo.engine.guardedCombinerOptimizationOn=true",
+            "finm" : "-Dgumbo.engine.round1FiniteMemoryOptimizationOn=true",
+            "v2" : "",
+            
+             
+            "planonly" : "--grouponly",
+            "hprof" : "-Dmapreduce.task.profile=true -Dmapreduce.task.profile.params=-agentlib:hprof=cpu=samples,depth=20,interval=4,lineno=y,thread=y,format=a,file=%s",
+             "hprof2" : "-Dmapreduce.task.profile=true -Dmapreduce.task.profile.params=-agentlib:hprof=cpu=samples,depth=100,interval=9,lineno=y,thread=y,format=b,file=%s,verbose=n",
             "test" : "",
+            
+            # v2 options
+            "unnest" : "-Dgumbo.compiler.unnest=true",
+            
+            "msjgroup" : "-Dgumbo.engine.valeval.group=true",
+            "msjnogroup" : "-Dgumbo.engine.valeval.group=false",
+            
+            "no1round" : "-Dgumbo.engine.valeval.enabled=false"
+            
         }
         
         for i in range(17):
@@ -167,8 +218,10 @@ class GumboRunner:
         
         opt_string = ""
         for id in ids:
-            opt_string += self.get_opts()[id]
-            opt_string += " "
+            d = self.get_opts()
+            if id in d:
+                opt_string += [id]
+                opt_string += " "
         
         return opt_string
         
@@ -202,7 +255,8 @@ class GumboRunner:
         print "---> FINISHED EXP %s <---"%(exp_id)
         print
         
-        self.remove_exp_output(exp_id)
+        if self.cleanup:
+            self.remove_exp_output(exp_id)
         
        
         
@@ -221,7 +275,8 @@ class GumboRunner:
         print "---> FINISHED EXP %s <---"%(exp_id)
         print
         
-        self.remove_exp_output(exp_id)
+        if self.cleanup:
+            self.remove_exp_output(exp_id)
         
         
     def create_id(self, qtype, dtype, size, opt, qid):
@@ -239,7 +294,8 @@ class GumboRunner:
             for size in data_sizes:
                 for type in data_types:
                     # generate data
-                    self.generate_input(type,size)
+                    pids = self.generate_input(type, size)
+                    self.wait_for(pids)
         
                     # run gumbo scripts with optimizations
                     for opt in opt_list:
@@ -256,7 +312,8 @@ class GumboRunner:
                         self.run_script(cmd, id_string)
                 
                     # delete data
-                    self.remove_input()
+                    if self.cleanup:
+                        self.remove_input()
         except:
             # clean up
             print "[ERROR] Something went wrong, cleaning up hdfs..."

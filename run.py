@@ -32,6 +32,8 @@ parser.add_argument("-l", "--local", action='store_true', default=False,\
         help="execute data generation locally instead of on hdfs")
 parser.add_argument("-d", "--debug", action='store_true', default=False,\
         help="no not execute commands, only print them")
+parser.add_argument("--nocleanup", "--nocleanup", action='store_true', default=False,\
+        help="avoid cleanup when done")
     
     
 args = parser.parse_args()
@@ -64,6 +66,7 @@ g.set_hdfs_dirs("input/experiments/"+session_id,"output/"+session_id,"scratch/"+
 g.set_function_file(function_file)
 g.set_local(params['local'])
 g.set_debug(params['debug'])
+g.set_cleanup(not params['nocleanup'])
 
 
 
